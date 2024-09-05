@@ -8,11 +8,11 @@ from deccom.nodes import StreamNode, Node
 from deccom.protocols.defaultprotocol import DefaultProtocol
 from deccom.peers import Peer
 from deccom.protocols.streamprotocol import StreamProtocol
-from param_exchange.resnet_trainer import *
+from resnet_trainer import *
 from multiprocessing import Lock, Process, Queue, current_process
 import json
 from pprint import pprint
-from param_exchange.training_protocol import TrainingProtocol
+from training_protocol import TrainingProtocol
 if __name__ == '__main__':
     curr_id = int(argv[1])
     loop = asyncio.new_event_loop()

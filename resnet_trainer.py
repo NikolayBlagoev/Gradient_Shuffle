@@ -5,9 +5,10 @@ from torch import manual_seed
 from typing import Callable
 from contextlib import redirect_stdout
 import time
+import torch
 from torchvision.models import resnet18
 from torch import optim, stack, mean, split, cat, tensor
-from torchvision.datasets import CIFAR10
+from torchvision.datasets import CIFAR100
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torch import cuda
@@ -53,7 +54,7 @@ class ResNetSubP(object):
     def __init__(self,queue_in: Queue, queue_out: Queue, net, optimizer, node_id = 0, world_size = 4,
                     device = "cuda") -> None:
         self.net = net
-        self.net.fc = Linear(512,10,bias=True)
+        self.net.fc = Linear(512,100,bias=True)
         self.net.to(device)
         self.device = device
         self.queue_in: Queue = queue_in
@@ -75,12 +76,15 @@ class ResNetSubP(object):
                             
                             transforms.ToTensor(),
                         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-        self.dataset = CIFAR10("./data",transform=transform,train=True)
-        
+        self.dataset = CIFAR100("./data",transform=transform,train=True,download=True)
+        self.trnds = CIFAR100("./data",transform=transform,train=False,download=True)
+        self.trnds = DataLoader(self.trnds,
+                                          batch_size=16, 
+                                          shuffle=True)
         self.loss_fn = CrossEntropyLoss()
         
         self.dl = iter(DataLoader(self.dataset,
-                                          batch_size=16, # x world size gives actual batch size
+                                          batch_size=32, # x world size gives actual batch size
                                           shuffle=True))
         
         for _ in range(self.node_id):
@@ -116,10 +120,27 @@ class ResNetSubP(object):
                     
                     dt, lbl = next(self.dl)
                 except StopIteration:
-                    exit()
+                    
                     self.epoch += 1
-                    if self.epoch == 3:
+                    if self.epoch == 10:
                         exit()
+                    tl = iter(self.trnds)
+                    correct = 0
+                    total = 0
+                    
+                    for _ in range(8):
+                        img,lbl = next(tl)
+                        img = img.to(self.device)
+                        lbl = lbl.to(self.device)
+                        
+                        
+                        out = self.net(img)
+                        _, predicted = torch.max(out, 1)
+                        total += lbl.size(0)
+                        correct += (predicted == lbl).sum().item()
+                        del img, lbl, out
+                    with open(f"log_stats_proj_2_{self.node_id}.txt", "a") as log:
+                        log.write(f"ACC:{correct/total}\n")
                     self.dl = iter(DataLoader(self.dataset,
                                           batch_size=16, # x world size gives actual batch size
                                           shuffle=True))
