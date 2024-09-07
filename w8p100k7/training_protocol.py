@@ -20,10 +20,11 @@ class TrainingProtocol(AbstractProtocol):
             "open_connection", "send_stream", "get_peer", "get_peers", "connected_callback","disconnected_callback"]
     
     GRADIENT = int.from_bytes(b'\x17',byteorder="big")
-    def __init__(self, world_size: int, queue_in: Queue, queue_out: Queue, subprocess:Process, submodule=None, callback: Callable[[tuple[str, int], bytes], None] = lambda : ...):
+    def __init__(self, world_size: int, k: int, queue_in: Queue, queue_out: Queue, subprocess:Process, submodule=None, callback: Callable[[tuple[str, int], bytes], None] = lambda : ...):
         
         super().__init__(submodule, callback)
         self.group = []
+        self.k = k
         self.queue_in = queue_in
         self.queue_out = queue_out
         self.subprocess = subprocess
@@ -95,20 +96,20 @@ class TrainingProtocol(AbstractProtocol):
                         group = pb + self.iteration + int(self.peer.pub_key)
                         if i > int(self.peer.pub_key):
                             group -= 1
-                        
-                        group = group % 4
+                        grpoup = 0
                         pr = await self._lower_find_peer(bytes(SHA256(str(pb))))
                         with open(f"log_stats_proj_2_{self.peer.pub_key}.txt", "a") as log:
                             log.write(f"TO {pb} goes group {group}\n")
                         
                         if group == 0:
-                            self.queue_out.put(GetGradients(pr.id_node, "layer4", "fc",0),True)
+                            self.queue_out.put(GetGradients(pr.id_node,  self.model_description[0], "fc",0),True)
                         elif group == 1:
-                            self.queue_out.put(GetGradients(pr.id_node, self.model_description[0], "layer1",0),True)
+                            self.queue_out.put(GetGradients(pr.id_node, self.model_description[0], "layer2",0),True)
                         elif group == 2:
-                            self.queue_out.put(GetGradients(pr.id_node, "layer2", "layer2",0),True)
-                        elif group == 3:
-                            self.queue_out.put(GetGradients(pr.id_node, "layer3", "layer3",0),True)
+                            await self.send_datagram(self.peer.id_node, pr.addr)
+                            # self.queue_out.put(GetGradients(pr.id_node, "layer2", "layer2",0),True)
+                        # elif group == 3:
+                        #     self.queue_out.put(GetGradients(pr.id_node, "layer3", "layer3",0),True)
                     continue
 
                 continue

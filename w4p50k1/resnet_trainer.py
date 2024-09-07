@@ -76,8 +76,8 @@ class ResNetSubP(object):
                             
                             transforms.ToTensor(),
                         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-        self.dataset = CIFAR100("./data",transform=transform,train=True,download=True)
-        self.trnds = CIFAR100("./data",transform=transform,train=False,download=True)
+        self.dataset = CIFAR100("../data",transform=transform,train=True,download=True)
+        self.trnds = CIFAR100("../data",transform=transform,train=False,download=True)
         self.trnds = DataLoader(self.trnds,
                                           batch_size=16, 
                                           shuffle=True)
@@ -192,14 +192,14 @@ class ResNetSubP(object):
             elif isinstance(task, Aggregate):
                 i = 0
                 while i < len(self.aggregation):
-                    print("AGGREGATING ",self.aggregation[i][1],self.aggregation[i][2])
+                    # print("AGGREGATING ",self.aggregation[i][1],self.aggregation[i][2])
                     self.aggregation[i][0].data[0:self.aggregation[i][1]] = self.prev_aggregation.data[0:self.aggregation[i][1]]
                     self.aggregation[i][0].data[self.aggregation[i][2]:] = self.prev_aggregation.data[self.aggregation[i][2]:]
                     self.aggregation[i] = self.aggregation[i][0]
                     i += 1
-                print("MINE ",0,self.ttl_l)
-                for k,v in self.str_ends.items():
-                    print(k,v[0],v[1])
+                # print("MINE ",0,self.ttl_l)
+                # for k,v in self.str_ends.items():
+                #     print(k,v[0],v[1])
                 self.aggregation.append(self.prev_aggregation)
                 ret = self.custom_avg(self.aggregation)
                 print(ret.shape)
