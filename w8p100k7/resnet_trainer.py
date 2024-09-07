@@ -6,7 +6,7 @@ from typing import Callable
 from contextlib import redirect_stdout
 import time
 import torch
-from torchvision.models import resnet18
+from torchvision.models import resnet34
 from torch import optim, stack, mean, split, cat, tensor
 from torchvision.datasets import CIFAR100
 from torch.utils.data import DataLoader
@@ -42,7 +42,7 @@ def run_p(queue_in: Queue, queue_out: Queue, world_size = 4, node_id: int = 0,
                     device = "cuda"):
     
     manual_seed(0)
-    net = resnet18()
+    net = resnet34()
     # If necessary half the params to fit more models
     # net.half()    
     optimizer = optim.SGD(net.parameters())
