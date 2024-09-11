@@ -34,6 +34,7 @@ class TrainingProtocol(AbstractProtocol):
         self.gradients_received = dict()
         self.queue_reader = None
         self.iteration = 0
+        self.can_acrue = False
         self.model_description = ["conv1","bn1","relu","maxpool","layer1","layer2","layer3","layer4","avgpool","fc"]
     
     
@@ -62,7 +63,7 @@ class TrainingProtocol(AbstractProtocol):
         await super().start(p)
         
         with open(f"log_stats_proj_2_{self.peer.pub_key}.txt", "a") as log:
-            log.write(f"===={self.peer.id_node} STARTING===\n")
+            log.write(f"===={self.peer.id_node} {self.peer.tcp} STARTING===\n")
         
         loop = asyncio.get_event_loop() 
         self.queue_reader = loop.create_task(self.read_from_queue())
@@ -83,7 +84,7 @@ class TrainingProtocol(AbstractProtocol):
             task = self.queue_in.get(True)
             try:
                 if isinstance(task,Gradients):
-                    await self.send_stream(task.seq_id[8:], task.seq_id[:8] + task.data)
+                    await self.send_stream(task.seq_id[8:], int(task.deferred).to_bytes(4,byteorder="big") + task.seq_id[:8] + task.data)
                     continue
                 elif isinstance(task,Start):
                     # Distribute Gradients
@@ -93,23 +94,27 @@ class TrainingProtocol(AbstractProtocol):
                         if i ==  int(self.peer.pub_key):
                             continue
                         pb = i
-                        group = pb + self.iteration + int(self.peer.pub_key)
+                        group = pb - self.iteration - int(self.peer.pub_key)
                         if i > int(self.peer.pub_key):
                             group -= 1
-                        grpoup = 0
+                        grpoup = group % (self.world_size - 1)
+                        while group < 0:
+                            group = self.world_size - 1 + group 
+                        group = group // self.k
+                        group = group % 3
                         pr = await self._lower_find_peer(bytes(SHA256(str(pb))))
+                        group = 0
                         with open(f"log_stats_proj_2_{self.peer.pub_key}.txt", "a") as log:
-                            log.write(f"TO {pb} goes group {group}\n")
+                            log.write(f"TO {pb} {pr.pub_key} goes group {group}\n")
                         
                         if group == 0:
-                            self.queue_out.put(GetGradients(pr.id_node,  self.model_description[0], "fc",0),True)
-                        elif group == 1:
-                            self.queue_out.put(GetGradients(pr.id_node, self.model_description[0], "layer2",0),True)
-                        elif group == 2:
-                            await self.send_datagram(self.peer.id_node, pr.addr)
+                            self.queue_out.put(GetGradients(pr.id_node, "embedding", "ln",0),True)
+                        
                             # self.queue_out.put(GetGradients(pr.id_node, "layer2", "layer2",0),True)
                         # elif group == 3:
                         #     self.queue_out.put(GetGradients(pr.id_node, "layer3", "layer3",0),True)
+                        self.can_acrue = True
+                        self.aggregate()
                     continue
 
                 continue
@@ -131,37 +136,54 @@ class TrainingProtocol(AbstractProtocol):
         return
     
     def aggregate(self):
-        self.iteration += 1
+        cl = 0
         for k,v in self.gradients_received.items():
-            v.pop()
-
+            if v.get(self.iteration) != None:
+                cl +=1
+        if cl != self.world_size - 1:
+            return
+        if not self.can_acrue:
+            return
+        self.can_acrue = False
+        for k,v in self.gradients_received.items():
+            del v[self.iteration]
+        self.iteration += 1
         self.queue_out.put(Aggregate(b'\x01'),True)
+        
         self.queue_out.put(Start(b'\x01'), True)
     
     def process_datagram(self, addr: tuple[str, int], data: bytes):
+        itr = int.from_bytes(data[:4],byteorder="big")
+        data = data[4:]
         nodeid = data
-
+        pr = self._lower_get_peer(nodeid)
+        with open(f"log_stats_proj_2_{self.peer.pub_key}.txt", "a") as log:
+            log.write(f"NO GRADIENT FROM {pr.pub_key} {itr}\n")
         if self.gradients_received.get(nodeid) == None:
-            self.gradients_received[nodeid] = []
-        self.gradients_received[nodeid].append(1)
+            self.gradients_received[nodeid] = dict()
+        self.gradients_received[nodeid][itr] = 1
         cl = 0
         for k,v in self.gradients_received.items():
-            if len(v) > 0:
+            if v.get(self.iteration) != None:
                 cl +=1
         if cl == self.world_size - 1:
             self.aggregate()
 
     @bindfrom("stream_callback")
     def process_data(self, data:bytes, nodeid, addr, retry = False):
+        itr = int.from_bytes(data[:4],byteorder="big")
+        data = data[4:]
+        p = self._lower_get_peer(nodeid)
         try:
-
-            self.queue_out.put(Gradients(b'\x01',data[8:],int.from_bytes(data[0:4],byteorder="big"),int.from_bytes(data[4:8],byteorder="big"),0), True)
             if self.gradients_received.get(nodeid) == None:
-                self.gradients_received[nodeid] = []
-            self.gradients_received[nodeid].append(1)
+                self.gradients_received[nodeid] = dict()
+            
+            self.queue_out.put(Gradients(b'\x01',data[8:],int.from_bytes(data[0:4],byteorder="big"),int.from_bytes(data[4:8],byteorder="big"),p.pub_key,itr), True)
+            
+            self.gradients_received[nodeid][itr] = 1
             cl = 0
             for k,v in self.gradients_received.items():
-                if len(v) > 0:
+                if v.get(self.iteration) != None:
                     cl +=1
             if cl == self.world_size - 1:
                 self.aggregate()

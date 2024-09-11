@@ -107,9 +107,9 @@ class TrainingProtocol(AbstractProtocol):
                             log.write(f"TO {pb} {pr.pub_key} goes group {group}\n")
                         
                         if group == 0:
-                            self.queue_out.put(GetGradients(pr.id_node, "layer3", "fc",0),True)
+                            self.queue_out.put(GetGradients(pr.id_node, "transformer_8", "ln",0),True)
                         elif group == 1:
-                            self.queue_out.put(GetGradients(pr.id_node, self.model_description[0], "layer2",0),True)
+                            self.queue_out.put(GetGradients(pr.id_node, "embedding", "transformer_7",0),True)
                         elif group == 2:
                             await self.send_datagram(int(self.iteration).to_bytes(4,byteorder="big")+self.peer.id_node, pr.addr)
                             # self.queue_out.put(GetGradients(pr.id_node, "layer2", "layer2",0),True)

@@ -80,17 +80,18 @@ def run_p(queue_in: Queue, queue_out: Queue, world_size = 4, node_id: int = 0,
     net = LLama(tkns.vocab_size,dmodel=256,num_heads=8,multiple_of=256,ctx_size=seq_l,n_layers=16)
     # If necessary half the params to fit more models
     # net.half()    
-    optimizer = optim.SGD(net.parameters())
+    optimizer = optim.SGD(net.parameters(),lr=4e-3,momentum=0,dampening=0,weight_decay=0,nesterov=False)
     with open(f'log{node_id}.txt', 'a') as file, redirect_stdout(file):
         loc =  ResNetSubP(queue_in,queue_out,net,optimizer,node_id,world_size,ts,device=device)
         loc.start()
     
 class ResNetSubP(object):
-    def __init__(self,queue_in: Queue, queue_out: Queue, net, optimizer, node_id = 0, world_size = 4, ds = None,
+    def __init__(self,queue_in: Queue, queue_out: Queue, net, optimizer, node_id = 0, world_size = 4, ds = None, lr = 4e-3,
                     device = "cuda") -> None:
         self.net = net
         self.net.to(device)
         self.device = device
+        self.lr = lr
         self.queue_in: Queue = queue_in
         self.queue_out: Queue = queue_out
         self.optimizer = optimizer
@@ -272,10 +273,10 @@ class ResNetSubP(object):
                     
                     
                     ret = split(ret, self.len_sizes)
-                    with torch.no_grad():
-                        for i, param in enumerate(self.net.parameters()):
-                            param.grad = ret[i].view(self.sizes[i]).to(self.device)
-                    self.optimizer.step()
+                    
+                    for i, param in enumerate(self.net.parameters()):
+                        param.data -= self.lr*ret[i].view(self.sizes[i]).to(self.device)
+                    
                     cuda.empty_cache()
         except Exception:
             with open(f"log_stats_proj_2_{self.node_id}.txt", "a") as log:
