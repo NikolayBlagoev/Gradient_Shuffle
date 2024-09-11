@@ -84,7 +84,7 @@ class ResNetSubP(object):
         self.loss_fn = CrossEntropyLoss()
         
         self.dl = iter(DataLoader(self.dataset,
-                                          batch_size=32, # x world size gives actual batch size
+                                          batch_size=16, # x world size gives actual batch size
                                           shuffle=True))
         
         for _ in range(self.node_id):
