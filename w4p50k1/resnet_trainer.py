@@ -153,7 +153,7 @@ class ResNetSubP(object):
                         
                         self.epoch += 1
                         if self.iteration >= 80000:
-                            save(net.state_dict(), f"gw4p50k1.pth")
+                            save(net.state_dict(), f"w4p50k1_{self.node_id}.pth")
                             exit()
                         
                         self.dl = iter(self.ds)
