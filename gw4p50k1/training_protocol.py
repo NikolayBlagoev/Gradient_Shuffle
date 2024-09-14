@@ -115,8 +115,8 @@ class TrainingProtocol(AbstractProtocol):
                             # self.queue_out.put(GetGradients(pr.id_node, "layer2", "layer2",0),True)
                         # elif group == 3:
                         #     self.queue_out.put(GetGradients(pr.id_node, "layer3", "layer3",0),True)
-                        self.can_acrue = True
-                        self.aggregate()
+                    self.can_acrue = True
+                    self.aggregate()
                     continue
 
                 continue
