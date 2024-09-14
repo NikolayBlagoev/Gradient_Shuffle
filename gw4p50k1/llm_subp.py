@@ -6,7 +6,7 @@ from typing import Callable
 from contextlib import redirect_stdout
 import time
 import torch
-from torch import optim, stack, mean, split, cat, tensor
+from torch import optim, stack, mean, split, cat, tensor,save
 from simplellm.tokenizers import SPTokenizer
 from simplellm.dataloaders import TinyStories
 from simplellm.llama import LLamaClassification,LLamaEmbedding,precompute_freqs_cis,TransformerBlock,RMSNorm
@@ -15,24 +15,32 @@ from torchvision import transforms
 import torch.nn.functional as F
 from torch import cuda
 import traceback
-
+import torch.distributed as dist
+import os
 from torch.nn import CrossEntropyLoss, Linear
 # Messages Exchanged by the processes
 @dataclass
 class Gradients:
-    seq_id: bytes
-    data: bytes
-    split_start: str
-    split_end: str
-    node_id: int
-    deferred: int
+    iteraion: int
+    split_start: int
+    split_end: int
+    to: int
+    tag: int
 
 @dataclass
+class SendGradient:
+    iteration: int
+    start: int
+    end: int
+    to: int
+    tag: int
+@dataclass
 class GetGradients:
-    seq_id: bytes
+    iteration: int
     split_start: str
     split_end: str
-    node_id: int
+    to: int
+    tag: int
 
 @dataclass
 class Start:
@@ -70,22 +78,24 @@ class LLama(torch.nn.Module):
         h = self.norm(h)
         output = self.ln(h).float()
         return output
-def run_p(queue_in: Queue, queue_out: Queue, world_size = 4, node_id: int = 0, 
+def run_p(maind_addr,queue_in: Queue, queue_out: Queue, world_size = 4, node_id: int = 0, 
                     device = "cuda"):
-    
+    os.environ["MASTER_ADDR"] = maind_addr
+    os.environ['MASTER_PORT'] = '2950'
+    dist.init_process_group("gloo", rank=node_id, world_size=world_size)
+
     manual_seed(0)
-    seq_l = 128
+    seq_l = 8
     tkns = SPTokenizer()
     ts = TinyStories(tkns,batch_size = 64 // world_size, seq_l=seq_l)
     net = LLama(tkns.vocab_size,dmodel=256,num_heads=8,multiple_of=256,ctx_size=seq_l,n_layers=16)
-    # If necessary half the params to fit more models
-    # net.half()    
+    
     optimizer = optim.SGD(net.parameters(),lr=4e-3,momentum=0,dampening=0,weight_decay=0,nesterov=False)
     with open(f'log{node_id}.txt', 'a') as file, redirect_stdout(file):
-        loc =  ResNetSubP(queue_in,queue_out,net,optimizer,node_id,world_size,ts,device=device)
+        loc =  SubP(queue_in,queue_out,net,optimizer,node_id,world_size,ts,device=device)
         loc.start()
     
-class ResNetSubP(object):
+class SubP(object):
     def __init__(self,queue_in: Queue, queue_out: Queue, net, optimizer, node_id = 0, world_size = 4, ds = None, lr = 4e-3,
                     device = "cuda") -> None:
         self.net = net
@@ -113,6 +123,9 @@ class ResNetSubP(object):
         self.ds = ds
         self.dl = iter(ds)
         
+        self.future_receives = {}
+        self.recvs = []
+        self.sends = []
         for _ in range(self.node_id):
             next(self.dl)
         self.str_ends = dict()
@@ -153,7 +166,7 @@ class ResNetSubP(object):
                         
                         self.epoch += 1
                         if self.iteration >= 80000:
-                            save(net.state_dict(), f"w4p50k1_{self.node_id}.pth")
+                            save(net.state_dict(), f"gw4p50k1_{self.node_id}.pth")
                             exit()
                         
                         self.dl = iter(self.ds)
@@ -172,30 +185,32 @@ class ResNetSubP(object):
                     with open(f"log_stats_proj_2_{self.node_id}.txt", "a") as log:
                         log.write(f"LOSS:{loss.item()}\n")
                     loss.backward()
-                    self.optimizer.step()
+                    # self.optimizer.step()
                     tmp = []
             
                     for param in self.net.parameters():
-                        
-                        tmp.append(param.data.view(-1))
+                        if param.grad == None:
+                            tmp.append(torch.zeros_like(param.data).view(-1))
+                            
+                        else:
+                            tmp.append(param.grad.data.view(-1))
                     prev_grad = cat(tmp).to("cpu")
                     
                     self.prev_aggregation = prev_grad.clone().detach()
                     self.queue_out.put(Start(b'\x01'))
-                    # TODO: GET GRADIENTS
-                    # self.optimizer.step()
+                    
                     continue
                 elif isinstance(task, Gradients):
-                    with open(f"log_stats_proj_2_{self.node_id}.txt", "a") as log:
-                        log.write(f"ADDING GRADIENT from {task.node_id} {self.iteration} {task.deferred}\n")
-                    ret = pickle.loads(task.data)
-                    if task.deferred == self.iteration:
-                        self.aggregation.append((ret,task.split_start,task.split_end))
+                    
+                    
+                    if task.iteraion == self.iteration:
+                        ret = torch.zeros(task.split_end-task.split_start)
+                        self.recvs.append((dist.irecv(tensor=ret,src = task.to, tag = task.tag),ret,task.split_start,task.split_end))
                         
                     else:
-                        if self.next_gradients.get(task.deferred) == None:
-                            self.next_gradients[task.deferred] = []
-                        self.next_gradients[task.deferred].append((ret,task.split_start,task.split_end))
+                        if self.next_gradients.get(task.iteration) == None:
+                            self.next_gradients[task.iteration] = []
+                        self.next_gradients[task.iteration].append((dist.irecv(tensor=ret,src = task.to, tag = task.tag),ret,task.split_start,task.split_end))
                     continue
                 elif isinstance(task, GetGradients):
                     tmp = self.prev_aggregation.clone().detach()
@@ -209,8 +224,16 @@ class ResNetSubP(object):
                             end = v[1]
                             break
                     tmp = tmp[strt:end]
-                    self.queue_out.put(Gradients(int(strt).to_bytes(4,byteorder = "big") + int(end).to_bytes(4,byteorder = "big") + task.seq_id, pickle.dumps(tmp),"","",self.node_id,self.iteration),True)
+                    self.sends.append(dist.isend(tensor=tmp,dst = task.to, tag = task.tag))
+                    self.queue_out.put(SendGradient(task.iteration,strt,end,task.to,task.tag))
                 elif isinstance(task, Aggregate):
+                    for v in self.sends:
+                        v.wait()
+                    self.sends.clear()
+                    for v in self.recvs:
+                        v[0].wait()
+                        self.aggregation.append((v[1],v[2],v[3]))
+                    self.recvs.clear()
                     self.iteration += 1
                     with open(f"log_stats_proj_2_{self.node_id}.txt", "a") as log:
                         log.write(f"===AGGEGATING==== {len(self.aggregation)}\n")
@@ -222,9 +245,7 @@ class ResNetSubP(object):
                         if tmp.get(k) == None:
                             tmp[k] = ([],self.aggregation[i][2])
                         tmp[k][0].append(self.aggregation[i][0])
-                        # self.aggregation[i][0].data[0:self.aggregation[i][1]] = self.prev_aggregation.data[0:self.aggregation[i][1]]
-                        # .data[self.aggregation[i][2]:] = self.prev_aggregation.data[self.aggregation[i][2]:]
-                        # self.aggregation[i] = self.aggregation[i][0]
+                        
                         i += 1
                     for k,v in tmp.items():
                         strt = k
@@ -273,7 +294,7 @@ class ResNetSubP(object):
                     ret = split(ret, self.len_sizes)
                     
                     for i, param in enumerate(self.net.parameters()):
-                        param.data = ret[i].view(self.sizes[i]).to(self.device)
+                        param.data -= self.lr*ret[i].view(self.sizes[i]).to(self.device)
                     
                     cuda.empty_cache()
         except Exception:
