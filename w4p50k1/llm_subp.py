@@ -17,6 +17,7 @@ from torch import cuda
 import traceback
 import torch.distributed as dist
 import os
+import time
 from torch.nn import CrossEntropyLoss, Linear
 # Messages Exchanged by the processes
 @dataclass
@@ -158,6 +159,7 @@ class SubP(object):
                             with open(f"log_stats_proj_2_{self.node_id}.txt", "a") as log:
                                 log.write(f"SAVING\n")
                             save(net.state_dict(), f"gw4p50k1_{self.node_id}.pth")
+                            time.sleep(10)
                             exit()
                     with open(f"log_stats_proj_2_{self.node_id}.txt", "a") as log:
                         log.write(f"=======NEW ITERATION:========\n")
@@ -175,6 +177,7 @@ class SubP(object):
                             with open(f"log_stats_proj_2_{self.node_id}.txt", "a") as log:
                                 log.write(f"SAVING\n")
                             save(net.state_dict(), f"gw4p50k1_{self.node_id}.pth")
+                            time.sleep(10)
                             exit()
                         
                         self.dl = iter(self.ds)
