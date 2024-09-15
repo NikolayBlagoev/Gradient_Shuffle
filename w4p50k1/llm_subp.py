@@ -154,6 +154,11 @@ class SubP(object):
                     break
                 task = self.queue_in.get(True)
                 if isinstance(task, Start):
+                    if self.iteration >= 80000:
+                            with open(f"log_stats_proj_2_{self.node_id}.txt", "a") as log:
+                                log.write(f"SAVING\n")
+                            save(net.state_dict(), f"gw4p50k1_{self.node_id}.pth")
+                            exit()
                     with open(f"log_stats_proj_2_{self.node_id}.txt", "a") as log:
                         log.write(f"=======NEW ITERATION:========\n")
                     self.optimizer.zero_grad()
@@ -162,10 +167,13 @@ class SubP(object):
                             next(self.dl)
                         
                         x, y = next(self.dl)
+                        
                     except StopIteration:
                         
                         self.epoch += 1
                         if self.iteration >= 80000:
+                            with open(f"log_stats_proj_2_{self.node_id}.txt", "a") as log:
+                                log.write(f"SAVING\n")
                             save(net.state_dict(), f"gw4p50k1_{self.node_id}.pth")
                             exit()
                         
@@ -184,6 +192,7 @@ class SubP(object):
                     
                     with open(f"log_stats_proj_2_{self.node_id}.txt", "a") as log:
                         log.write(f"LOSS:{loss.item()}\n")
+                        log.write(f"Iteration:{self.iteration}\n")
                     loss.backward()
                     self.optimizer.step()
                     tmp = []
