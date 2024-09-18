@@ -98,21 +98,19 @@ class TrainingProtocol(AbstractProtocol):
                         while group < 0:
                             group = self.world_size - 1 + group 
                         group = group // self.k
-                        group = group % 3
+                        group = 0
                         pr = await self._lower_find_peer(bytes(SHA256(str(pb))))
                         with open(f"log_stats_proj_2_{self.peer.pub_key}.txt", "a") as log:
                             log.write(f"TO {pb} {pr.pub_key} goes group {group}\n")
                         
                         if group == 0:
-                            self.queue_out.put(GetGradients(self.iteration, "transformer_12", "ln",pb,self.tag),True)
+                            self.queue_out.put(GetGradients(self.iteration, "embedding", "ln",pb,self.tag),True)
                         elif group == 1:
-                            self.queue_out.put(GetGradients(self.iteration, "embedding", "transformer_3",pb,self.tag),True)
+                            self.queue_out.put(GetGradients(self.iteration, "embedding", "transformer_7",pb,self.tag),True)
                             
                         elif group == 2:
-                            self.queue_out.put(GetGradients(self.iteration, "transformer_4", "transformer_7",pb,self.tag),True)
-                        elif group == 3:
-                            self.queue_out.put(GetGradients(self.iteration, "transformer_8", "transformer_11",pb,self.tag),True)
-
+                            await self.send_datagram(int(self.iteration).to_bytes(4,byteorder="big") + int(self.tag).to_bytes(1,byteorder="big")+int(0).to_bytes(8,byteorder="big")+int(0).to_bytes(8,byteorder="big")+self.peer.id_node, pr.addr)
+                    
                         self.tag += 1
                         self.tag = self.tag % 253
                             # self.queue_out.put(GetGradients(pr.id_node, "layer2", "layer2",0),True)
