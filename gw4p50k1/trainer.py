@@ -9,13 +9,15 @@ from deccom.protocols.defaultprotocol import DefaultProtocol
 from deccom.peers import Peer
 from deccom.protocols.streamprotocol import StreamProtocol
 from llm_subp import *
-from multiprocessing import Lock, Process, Queue, current_process
+from multiprocessing import Lock, Process, Queue, current_process, set_start_method
 import json
+import torch
 from pprint import pprint
 from training_protocol import TrainingProtocol
 import os
 if __name__ == '__main__':
     curr_id = int(argv[1])
+    set_start_method("spawn")
     loop = asyncio.new_event_loop()
 
     while True:
