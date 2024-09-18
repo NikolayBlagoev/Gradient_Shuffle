@@ -64,6 +64,7 @@ class LLama(torch.nn.Module):
                     freq_cis=self.freqs_cis,
                     multiple_of=multiple_of,
                     norm_eps=norm_eps,
+                    idx=i,
                     ffn_dim_multiplier=ffn_dim_multiplier, 
                     device = device
                 ))
