@@ -89,15 +89,16 @@ def run_p(maind_addr,queue_in: Queue, queue_out: Queue, world_size = 4, node_id:
     seq_l = 8
     tkns = SPTokenizer()
     ts = TinyStories(tkns,batch_size = 64 // world_size, seq_l=seq_l)
+    vals = TinyStories(tkns,batch_size = 64 // world_size, seq_l=seq_l, split = "validation")
     net = LLama(tkns.vocab_size,dmodel=256,num_heads=8,multiple_of=256,ctx_size=seq_l,n_layers=16)
     
     optimizer = optim.SGD(net.parameters(),lr=4e-3,momentum=0,dampening=0,weight_decay=0,nesterov=False)
     with open(f'log{node_id}.txt', 'a') as file, redirect_stdout(file):
-        loc =  SubP(queue_in,queue_out,net,optimizer,node_id,world_size,ts,device=device)
+        loc =  SubP(queue_in,queue_out,net,optimizer,node_id,world_size,ts,vals,device=device)
         loc.start()
     
 class SubP(object):
-    def __init__(self,queue_in: Queue, queue_out: Queue, net, optimizer, node_id = 0, world_size = 4, ds = None, lr = 4e-3,
+    def __init__(self,queue_in: Queue, queue_out: Queue, net, optimizer, node_id = 0, world_size = 4, ds = None, vals = None, lr = 4e-3,
                     device = "cuda") -> None:
         self.net = net
         self.net.to(device)
@@ -123,6 +124,7 @@ class SubP(object):
         self.model_description += ["norm","ln"]
         self.ds = ds
         self.dl = iter(ds)
+        self.valds = vals
         
         self.future_receives = {}
         self.recvs = []
@@ -155,6 +157,21 @@ class SubP(object):
                     break
                 task = self.queue_in.get(True)
                 if isinstance(task, Start):
+                    if self.iteration % 1000 == 0:
+                        val_l = iter(self.valds)
+                        val_loss = []
+                        for i in range(10):
+                            x, y = next(val_l)
+                            x = x.to(self.device)
+                            y = y.to(self.device)
+                            x = self.net(x)
+                            B, T, C = x.shape
+                            x = x.view(B*T,C)
+                            y = y.view(B*T)
+                            loss = F.cross_entropy(x,y)
+                            val_loss.append(loss.item())
+                        with open(f"log_stats_proj_2_{self.node_id}.txt", "a") as log:
+                            log.write(f"Validation:{sum(val_loss)/len(val_loss)}\n")
                     if self.iteration >= 80000:
                             with open(f"log_stats_proj_2_{self.node_id}.txt", "a") as log:
                                 log.write(f"SAVING\n")
