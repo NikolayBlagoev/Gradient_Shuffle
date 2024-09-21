@@ -96,9 +96,9 @@ class TrainingProtocol(AbstractProtocol):
                             group -= 1
                         grpoup = group % (self.world_size - 1)
                         while group < 0:
-                            group = self.world_size - 1 + group 
+                            group =  4 + group 
                         group = group // self.k
-                        group = group % 3
+                        group = group % 4
                         pr = await self._lower_find_peer(bytes(SHA256(str(pb))))
                         with open(f"log_stats_proj_2_{self.peer.pub_key}.txt", "a") as log:
                             log.write(f"TO {pb} {pr.pub_key} goes group {group}\n")

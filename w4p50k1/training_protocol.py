@@ -96,7 +96,7 @@ class TrainingProtocol(AbstractProtocol):
                             group -= 1
                         grpoup = group % (self.world_size - 1)
                         while group < 0:
-                            group = self.world_size - 1 + group 
+                            group = 3 + group 
                         group = group // self.k
                         group = group % 3
                         pr = await self._lower_find_peer(bytes(SHA256(str(pb))))

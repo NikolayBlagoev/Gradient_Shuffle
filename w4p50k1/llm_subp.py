@@ -87,7 +87,7 @@ def run_p(maind_addr,queue_in: Queue, queue_out: Queue, world_size = 4, node_id:
     dist.init_process_group("gloo", rank=node_id, world_size=world_size)
 
     manual_seed(0)
-    seq_l = 8
+    seq_l = 128
     tkns = SPTokenizer()
     ts = TinyStories(tkns,batch_size = 64 // world_size, seq_l=seq_l)
     vals = TinyStories(tkns,batch_size = 64 // world_size, seq_l=seq_l, split = "validation")

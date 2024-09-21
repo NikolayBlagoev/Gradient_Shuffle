@@ -1,3 +1,25 @@
+world_size = 4
+k = 1
+pubkey = 1
+for iteration in range(10):
+    print("---------")
+    for i in range(world_size):
+        if i ==  pubkey:
+            continue
+        pb = i
+        group = pb - iteration - pubkey
+        if i > pubkey:
+            group -= 1
+        grpoup = group % (world_size - 1)
+        while group < 0:
+            group = 3 + group 
+        group = group // k
+        
+        group = group % 3
+        print(pb,group)
+
+
+exit()
 import torch
 import torchvision
 import torchvision.transforms as transforms
